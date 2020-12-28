@@ -1,10 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:shared/main.dart';
-import 'package:shared/modules/authentication/models/current_user_data.dart';
-
 import 'package:shared/modules/authentication/resources/authentication_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'authentication_bloc_public.dart';
 
 class AuthenticationBloc
@@ -28,15 +25,19 @@ class AuthenticationBloc
       yield* _mapUserLoginState(event);
     }
     if (event is UserLogOut) {
+      await Future.delayed(Duration(milliseconds: 500)); // a simulated delay
+      authenticationService.logout();
       sharedPreferences.setString('authtoken', null);
-      sharedPreferences.setInt('userId', null);
+      sharedPreferences.setString('userId', null);
       yield UserLogoutState();
     }
     if (event is GetUserData) {
-      int currentUserId = sharedPreferences.getInt('userId');
-      final data = await authenticationService.getUserData(currentUserId ?? 4);
-      final currentUserData = CurrentUserData.fromJson(data);
-      yield SetUserData(currentUserData: currentUserData);
+      final firebaseUser = await authenticationService.getUserData();
+      if (firebaseUser != null)
+        yield SetUserData(
+            email: firebaseUser.email, avatar: firebaseUser.avatar);
+      else
+        yield AuthenticationStart();
     }
   }
 
@@ -62,16 +63,12 @@ class AuthenticationBloc
     yield AuthenticationLoading();
     try {
       await Future.delayed(Duration(milliseconds: 500)); // a simulated delay
-      final data = await authenticationService.signUpWithEmailAndPassword(
-          event.email, event.password);
-
-      final currentUser = UserData.fromJson(data);
-      if (currentUser != null) {
-        sharedPreferences.setString('authtoken', currentUser.token);
-        sharedPreferences.setInt('userId', currentUser.id);
+      final firebaseUser = await authenticationService
+          .signUpWithEmailAndPassword(event.email, event.password);
+      if (firebaseUser != null) {
+        sharedPreferences.setString('authtoken', firebaseUser.token);
+        sharedPreferences.setString('userId', firebaseUser.uid);
         yield AppAutheticated();
-      } else {
-        yield AuthenticationNotAuthenticated();
       }
     } catch (e) {
       yield AuthenticationFailure(
@@ -84,14 +81,11 @@ class AuthenticationBloc
     yield AuthenticationLoading();
     try {
       await Future.delayed(Duration(milliseconds: 500)); // a simulated delay
-      final data = await authenticationService.loginWithEmailAndPassword(
-          event.email, event.password);
-      final currentUser = Token.fromJson(data);
-      if (currentUser != null) {
-        sharedPreferences.setString('authtoken', currentUser.token);
+      final firebaseUser = await authenticationService
+          .loginWithEmailAndPassword(event.email, event.password);
+      if (firebaseUser != null) {
+        sharedPreferences.setString('authtoken', firebaseUser.token);
         yield AppAutheticated();
-      } else {
-        yield AuthenticationNotAuthenticated();
       }
     } catch (e) {
       yield AuthenticationFailure(
